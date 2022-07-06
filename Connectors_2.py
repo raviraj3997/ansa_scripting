@@ -26,22 +26,40 @@ deck = constants.ABAQUS
 # mat_name = behave._name
 
 # dirr = dir(behave)
+
+
 # mat_elast1 = base.NameToEnts("^CONNECTOR ELASTICITY:CURVE_BUSHING/10_BEHAVIOR$")
 # mat_elast2 = base.NameToEnts("^CONNECTOR ELASTICITY:CURVE_BUSHING/10_BEHAVIOR:1$")
+
 # print(mat_elast1)
 # print(mat_elast2)
 # elast1 = mat_elast1[0]
 # elast2 = mat_elast2[0]
 # print(elast1)
 # print(elast2)
-# conn_behave2 = base.elast2(deck, None, 'CONNECTOR_ELASTICITY')
-# # name = conn_behave2[0]._name
-# props1 = elast1.get_entity_values(deck,('COMP','COMP(1)','NONLINEAR(1)','El.Stiff.(1)', 'Freq.(1)'))
+
+# props1 = elast1.get_entity_values(deck,('COMP','COMP(1)','NONLINEAR(1)','El.Stiff.(1)', 'Freq.(1)', 'DATA TABLE(1)'))
 # print(props1)
 
-# props2 = elast2.get_entity_values(deck,('COMP','COMP(1)','NONLINEAR(1)','El.Stiff.(1)', 'Freq.(1)'))
+# props2 = elast2.get_entity_values(deck,('COMP','COMP(1)','NONLINEAR(1)','El.Stiff.(1)', 'Freq.(1)','DATA TABLE(1)'))
 # print(props2)
 
+
+# if props1['NONLINEAR(1)'] == "YES":
+#     print("Prop1")
+#     print(props1)
+#     ent = ansa.base.NameToEnts("^CONNECTOR ELASTICITY:CURVE_BUSHING/10_BEHAVIOR Data Table$")
+#     curve_data = ansa.base.GetLoadCurveData(ent[0])
+#     print(curve_data)
+
+# if props2['NONLINEAR(1)'] == "YES":
+#     print("Prop2")
+#     print(props2)
+#     ent = ansa.base.NameToEnts("^CONNECTOR ELASTICITY:CURVE_BUSHING/10_BEHAVIOR:1 Data Table$")
+#     print(sorted(ent))
+#     curve_data = ansa.base.GetLoadCurveData(ent[0])
+#     print(curve_data)
+    
 # coordinate_sys = connector_section_prop['ORIENT_1']
 # c_name = coordinate_sys._name
 

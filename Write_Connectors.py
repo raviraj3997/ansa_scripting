@@ -41,6 +41,7 @@ class ConnectorSections:
 					ConnectorMaterial(self.output_file, conn_mat, conn_comp1, conn_comp2).write()
 			else:
 				# print(f"CONNECTOR SECTION with ELST:{conn_section._name} has no BEHAVIOR keyword. The connector element's behavior is determined by kinematic constraints only.")
+				self.connector_materials = ''
 				file = open(self.output_file, 'a')
 
 				file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
@@ -131,6 +132,7 @@ class ConnectorMaterial:
 		if conn_elast_list:
 			conn_elast = conn_elast_list[0]
 			print(f"Writing connector material NAME: {self.material._name}")
+			# print(conn_elast.card_fields(self.deck))
 			self.write_connector_elasticity(conn_elast)
 			
 			# print(f"Writing connector material named TEst {conn_elast._name}")
@@ -138,6 +140,7 @@ class ConnectorMaterial:
 	def write_connector_elasticity(self, conn_elast):
 		# print(conn_elast)
 		file = open(self.output_file, 'a')
+		file.write(f'! Stiffness Properties : {conn_elast._name} \n')
 		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
 		if self.conn_comp1 in comps or self.conn_comp2 in comps:
 			file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
@@ -162,7 +165,7 @@ class ConnectorMaterial:
 					file.write('\n')
 					file.write('TB,JOIN,M_ID,1,,STIF\n')
 				for i in range(1,7):
-					props = (f'COMP({i})',f'DEP({i})',f'RIGID({i})',f'NONLINEAR({i})',f'El.Stiff.({i})',f'Freq.({i})',f'Force({i})',f'Rel.Disp.({i})',)
+					props = (f'COMP({i})',f'DEP({i})',f'RIGID({i})',f'NONLINEAR({i})',f'El.Stiff.({i})',f'Freq.({i})',f'Force({i})',f'Rel.Disp.({i})',f'DATA TABLE({i})')
 					prop_dict = conn_elast.get_entity_values(self.deck, props)
 					if f'DEP({i})' in prop_dict.keys() and  prop_dict[f'DEP({i})'] != 'YES' and f'RIGID({i})' in prop_dict.keys() and prop_dict[f'RIGID({i})'] != 'YES':
 						if prop_dict[f'COMP({i})'] == 'YES':
@@ -182,9 +185,30 @@ class ConnectorMaterial:
 						else:
 							pass
 					else:
-						if f'DEP({i})' in prop_dict.keys() and prop_dict[f'DEP({i})'] != 'YES':
+						if f'DEP({i})' in prop_dict.keys() and prop_dict[f'DEP({i})'] == 'YES':
 							if prop_dict[f'NONLINEAR({i})'] == 'YES':
-								pass
+								tbpt_data = ''
+								tbpts = 0
+								temps = 0
+								curr_temp = 0
+								curve_data = self.base.GetLoadCurveData(prop_dict[f'DATA TABLE({i})'])
+								# print(curve_data)
+								for pt in curve_data:
+									tbpts += 1
+									if len(pt) == 3:
+										if curr_temp != pt[2]:
+											curr_temp = pt[2]
+											temps += 1
+											tbpt_data = tbpt_data + '\n'
+											tbpt_data = tbpt_data + f'TBTEMP,{curr_temp}\n'
+										tbpt_data = tbpt_data + f'TBPT,,{pt[1]},{pt[0]} \n'
+
+									elif len(pt) == 2:
+										tbpt_data = tbpt_data + f'TBPT,,{pt[1]},{pt[0]} \n'
+								if temps == 0:
+									temps = 1
+								file.write(f'TB,JOIN,M_ID,{temps},{tbpts},JNS{i}\n')
+								file.write(tbpt_data)
 							else:
 								print(f"Tabular values are given for *CONNECTOR ELASTICITY with NAME:{conn_elast._name}. And this entity is not processed.")
 
@@ -215,15 +239,16 @@ class ConnectorOrientation:
 		general_joint_comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
 
 		joint_type = ''
+		rdofs = ''
 		if self.conn_comp1 in general_joint_comps:
 			joint_type = 'gene'
+			rdofs = ''
 
 		elif self.conn_comp1 in 'WELD':
 			joint_type = 'WELD'
-
+			rdofs = ''
 
 		file = open(self.output_file, 'a')
-		file.write('\n')
 		file.write('*get,SEC_MAX,SECP,,NUM,MAX\n')	
 		file.write('SEC_ID = SEC_MAX + 1\n')		
 		file.write(f'sectype,SEC_ID, joint, {joint_type},\n')
@@ -242,7 +267,11 @@ class ConnectorOrientation:
 			id_2 = 0
 
 		file.write(f'SECJOIN,,{id_1},{id_2}\n')
-		file.write('SECJOIN,RDOF\n')
+		file.write(f'SECJOIN,RDOF,{rdofs}\n')
+		file.close()
+	
+
+		file = open(self.output_file, 'a')
 		file.write('\n')
 		file.write(f'SECNUM, SEC_ID\n')
 		file.write('\n')
