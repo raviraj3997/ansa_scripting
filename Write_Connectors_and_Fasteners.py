@@ -5,29 +5,34 @@ from ansa import base
 from ansa import constants
 import math
 
+
+def process_entities(location, connectors=[], fasteners=[]) -> None:
+	fastneres_dict = Fasteners().get_fasteners_with_connectors(fasteners=fasteners)
+	ConnectorSections(location, connectors, fastneres_dict).write()
+	
 class ConnectorSections:
 
-	def __init__(self, conn_sections:list, out_file:str) -> None:
+	def __init__(self, out_folder:str, conn_sections:list, fastneres_dict) -> None:
 		self.base = base
 		self.deck = constants.ABAQUS
-		self.output_file = out_file
+		self.output_file_connector = os.path.join(out_folder , 'connectors_only.dat')
+		self.output_file_connector_fastener = os.path.join(out_folder , 'connectors_and_fasteners.dat')
 		self.conn_sections = conn_sections
-
+		self.fastners = fastneres_dict
 		self.connector_materials = ''
+		self.out_file_check = ''
 
 	def write(self):
 		"""
 		Write out the all properties (Material, Elemets, and Orientations) reataled to Given Connection Section. 
 
 		"""
-		file = open(self.output_file, 'w')
-		file.write('*GET,REAL_MAX,RCON,0,0,NUM,MAX\n')
-		file.write('R_ID = REAL_MAX + 1\n')
-		file.write('R,R_ID\n')
-		file.write('\n')
-		file.write(f'REAL, R_ID\n')
-		file.write('\n')
-		file.close()
+		if len(self.conn_sections) != len(self.fastners.keys()):
+			self.write_real_id(self.output_file_connector)
+
+		if self.fastners:
+			self.write_real_id(self.output_file_connector_fastener)
+
 
 		for conn_section in self.conn_sections:
 			conn_section_entities = conn_section.get_entity_values(self.deck,('MID','COMPONENT_1','COMPONENT_2','ORIENT_1','ORIENT_2' ))
@@ -38,17 +43,28 @@ class ConnectorSections:
 
 			conn_ref_length_commnads = ''
 
+			if conn_section._name in self.fastners.keys():
+				fastener = self.fastners[conn_section._name]
+				write_in_file = self.output_file_connector_fastener
+			else:
+				fastener = None
+				write_in_file = self.output_file_connector
+
+			if write_in_file != self.out_file_check:
+				self.out_file_check = write_in_file
+				self.connector_materials = ''
+
 			if conn_mat != None:
 				if conn_mat._name != self.connector_materials:
 					# print(conn_mat._name)
 					self.connector_materials = conn_mat._name
-					ConnectorMaterial(self.output_file, conn_mat, conn_comp1, conn_comp2).write()
+					ConnectorMaterial(self.out_file_check, conn_mat, conn_comp1, conn_comp2).write()
 				conn_ref_length_commnads = ConnectorConstitutiveReference(conn_mat).get_commands()
 				# print(conn_ref_length_commnads)
 			else:
 				# print(f"CONNECTOR SECTION with ELST:{conn_section._name} has no BEHAVIOR keyword. The connector element's behavior is determined by kinematic constraints only.")
 				self.connector_materials = ''
-				file = open(self.output_file, 'a')
+				file = open(self.out_file_check, 'a')
 
 				file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
 				file.write('M_ID = MAT_MAX+1\n')
@@ -61,22 +77,35 @@ class ConnectorSections:
 
 			ORIENT_1 = conn_section_entities['ORIENT_1']
 			ORIENT_2 = conn_section_entities['ORIENT_2']
-			ConnectorOrientation(self.output_file, ORIENT_1, ORIENT_2, conn_comp1,  conn_comp2, conn_ref_length_commnads).write()
+			ConnectorOrientation(self.out_file_check, ORIENT_1, ORIENT_2, conn_comp1,  conn_comp2, conn_ref_length_commnads).write()
 
-			ConnectorElement(self.output_file, conn_section, conn_comp1, conn_comp2).write()
+			ConnectorElement(self.out_file_check, conn_section, conn_comp1, conn_comp2, ORIENT_1, ORIENT_2, fastener).write()
+
+	def write_real_id(self, file_out):
+		file = open(file_out, 'w')
+		file.write('*GET,REAL_MAX,RCON,0,0,NUM,MAX\n')
+		file.write('R_ID = REAL_MAX + 1\n')
+		file.write('R,R_ID\n')
+		file.write('\n')
+		file.write(f'REAL, R_ID\n')
+		file.write('\n')
+		file.close()
 
 class ConnectorElement:
 	
-	def __init__(self, out_file, conn_section, conn_comp1, conn_comp2) -> None:
+	def __init__(self, out_file, conn_section, conn_comp1, conn_comp2, ORIENT_1, ORIENT_2, fastener) -> None:
 		self.base = base
 		self.deck = constants.ABAQUS
-		self.output_file = out_file
+		self.out_file_check = out_file
 		self.conn_section = conn_section
 		self.conn_comp1 = conn_comp1
 		self.conn_comp2 = conn_comp2
+		self.orient_1 = ORIENT_1
+		self.orient_2 = ORIENT_2
+		self.fastener = fastener
 
 	def write(self):
-		file = open(self.output_file, 'a')
+		file = open(self.out_file_check, 'a')
 		sec_elems = base.CollectEntities(self.deck, self.conn_section, None)
 		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
 		if sec_elems:
@@ -85,19 +114,20 @@ class ConnectorElement:
 			file.write('ET,ETYP_ID,184\n')
 
 			if self.conn_comp1 in comps:
-				file.write('KEYOPT,E_id+1,1,16          ! General Joint\n')
-			
+				file.write('KEYOPT,ETYP_ID,1,16          ! General Joint\n')
+				if self.conn_comp1 == 'AXIAL':
+					file.write('KEYOPT,ETYP_ID,4,1          ! displacement dof are activated\n')
 			elif self.conn_comp1 == 'WELD':
-				file.write('KEYOPT,E_id+1,1,13          ! Weld Joint\n')
+				file.write('KEYOPT,ETYP_ID,1,13          ! Weld Joint\n')
 
 			elif self.conn_comp1 == 'JOIN':
 				if self.conn_comp2 == None:
-					file.write('KEYOPT,E_id+1,1,0          ! Rigid Link Joint\n')
+					file.write('KEYOPT,ETYP_ID,1,0          ! Rigid Link Joint\n')
 				elif self.conn_comp2 == 'ALIGN':
-					file.write('KEYOPT,E_id+1,1,1          ! Rigid Beam\n')
+					file.write('KEYOPT,ETYP_ID,1,1          ! Rigid Beam\n')
 
 			elif self.conn_comp1 == 'BEAM':
-				file.write('KEYOPT,E_id+1,1,1          ! Rigid Beam\n')
+				file.write('KEYOPT,ETYP_ID,1,1          ! Rigid Beam\n')
 
 			file.write('\n')
 			file.write('TYPE, ETYP_ID\n')
@@ -107,9 +137,13 @@ class ConnectorElement:
 			for elem in sec_elems:
 				nodes = elem.get_entity_values(self.deck,('G1','G2'))
 				# print(nodes)
-				file.write(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
+				if self.fastener == None:
+					file.write(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
+				else:
+					fastener_commands = Fasteners().get_fastener_commnands(self.fastener, nodes, self.orient_1, self.orient_2, sec_elems)
+					file.write(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
+
 				# print(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
-			
 			file.write('\n')
 				
 		file.close()
@@ -146,7 +180,7 @@ class ConnectorMaterial:
 	def __init__(self, out_file, material, conn_comp1, conn_comp2) -> None:
 		self.base = base
 		self.deck = constants.ABAQUS
-		self.output_file = out_file
+		self.out_file_check = out_file
 		self.material = material
 		self.conn_comp1 = conn_comp1
 		self.conn_comp2 = conn_comp2
@@ -163,7 +197,7 @@ class ConnectorMaterial:
 		if conn_elast_list or conn_damping_list:
 			
 			print(f"Writing connector material NAME: {self.material._name}")
-			file = open(self.output_file, 'a')
+			file = open(self.out_file_check, 'a')
 			file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
 			file.write('M_ID = MAT_MAX+1\n')
 			file.close()
@@ -175,7 +209,7 @@ class ConnectorMaterial:
 				conn_damp = conn_damping_list[0]
 				self.write_connector_damping(conn_damp)
 
-			file = open(self.output_file, 'a')
+			file = open(self.out_file_check, 'a')
 			file.write('\n')
 			file.write(f'MAT, M_ID\n')
 			file.write('\n')
@@ -183,7 +217,7 @@ class ConnectorMaterial:
 			
 			# print(f"Writing connector material named TEst {conn_elast._name}")
 	def write_connector_damping(self, conn_damp):
-		file = open(self.output_file, 'a')
+		file = open(self.out_file_check, 'a')
 		file.write('\n')
 		file.write(f'! Damping Properties : {conn_damp._name} \n')
 		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
@@ -264,7 +298,7 @@ class ConnectorMaterial:
 
 	def write_connector_elasticity(self, conn_elast):
 		# print(conn_elast)
-		file = open(self.output_file, 'a')
+		file = open(self.out_file_check, 'a')
 		file.write('\n')
 		file.write(f'! Stiffness Properties : {conn_elast._name} \n')
 		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
@@ -349,7 +383,7 @@ class ConnectorOrientation:
 	def __init__(self, out_file, CSYS1, CSYS2, conn_comp1,  conn_comp2, conn_ref_length_commnads) -> None:
 		self.base = base
 		self.deck = constants.ABAQUS
-		self.output_file = out_file
+		self.out_file_check = out_file
 		self.csys_1 = CSYS1
 		self.csys_2 = CSYS2
 		self.conn_comp1 = conn_comp1
@@ -369,7 +403,7 @@ class ConnectorOrientation:
 			joint_type = 'WELD'
 			rdofs = ''
 
-		file = open(self.output_file, 'a')
+		file = open(self.out_file_check, 'a')
 		file.write('*get,SEC_MAX,SECP,,NUM,MAX\n')	
 		file.write('SEC_ID = SEC_MAX + 1\n')		
 		file.write(f'sectype,SEC_ID, joint, {joint_type},\n')
@@ -409,3 +443,37 @@ class ConnectorOrientation:
 				csys  = c_id + 10
 		return csys
 
+
+
+
+class Fasteners:
+	def __init__(self) -> None:
+		self.base = base
+		self.deck = constants.ABAQUS
+	
+	def get_fasteners_with_connectors(self, fasteners):
+		fastener_dict = {}
+		for fastener in fasteners:
+			fastener_details = fastener.get_entity_values(self.deck,('ELSET id','connector', 'standalone'))
+			# print(fastener_details)
+			if fastener_details['connector'] == 'yes':
+				if fastener_details['standalone'] == 'no':
+					fastener_elset = fastener_details['ELSET id']
+					fastener_dict[fastener_elset._name] = fastener
+				else:
+					fastener_interaction = fastener.get_entity_values(self.deck,('INTERACTION',))['INTERACTION']
+					print(f'*FASTENER with INTERACTION NAME:{fastener_interaction._name} is defined with standalone:yes, it is not processed')
+
+			else:
+				fastener_interaction = fastener.get_entity_values(self.deck,('INTERACTION',))['INTERACTION']
+				if fastener_details['connector'] != 'yes':
+					print(f'*FASTENER with INTERACTION NAME:{fastener_interaction._name} is defined with NODE SET, it is not processed')
+				if fastener_details['standalone'] != 'no':
+					print(f'*FASTENER with INTERACTION NAME:{fastener_interaction._name} is defined with standalone:yes, it is not processed')
+		return fastener_dict
+
+	def get_fastener_commnands(self, fastener, nodes, orient_1, orient_2, sec_elems):
+		n1 = nodes['G1']
+		n2 = nodes['G2']
+
+		return ''

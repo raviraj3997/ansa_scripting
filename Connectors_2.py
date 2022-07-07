@@ -4,19 +4,52 @@ import ansa
 from ansa import base
 from ansa import constants
 deck = constants.ABAQUS
-import Write_Connectors
+import Write_Connectors_and_Fasteners
 import importlib
-importlib.reload(Write_Connectors)
+importlib.reload(Write_Connectors_and_Fasteners)
 
 
 
 # def main():
 # 	# Need some documentation? Run this with F5
-deck = constants.ABAQUS
+# deck = constants.ABAQUS
 
 # conn_sections = base.CollectEntities(deck, None, 'CONNECTOR_SECTION')
 # conn_sec = conn_sections[0]
-# connector_section_prop = conn_sec.get_entity_values(deck,('MID',))
+# print(conn_sec._name)
+
+
+# fastener_dict = {}
+
+# fastener_sections = base.CollectEntities(deck, None, 'FASTENER')
+# for fastener_section in fastener_sections:
+#     fastener_elset_val = fastener_section.get_entity_values(deck,('ELSET id','connector', 'standalone'))
+#     print(fastener_elset_val)
+#     if fastener_elset_val['connector'] == 'yes' and fastener_elset_val['standalone'] == 'no' :
+#         fastener_elset = fastener_elset_val['ELSET id']
+#         fastener_dict[fastener_elset._name] = fastener_section
+#     else:
+#         fastener_interaction = fastener_section.get_entity_values(deck,('INTERACTION',))['INTERACTION']
+#         if fastener_elset_val['connector'] != 'yes':
+#             print(f'*FASTENER with INTERACTION NAME:{fastener_interaction._name} is defined with NODE SET, it is not processed')
+#         if fastener_elset_val['standalone'] != 'no':
+#             print(f'*FASTENER with INTERACTION NAME:{fastener_interaction._name} is defined with standalone:yes, it is not processed')
+
+# elset = base.CollectEntities(deck, fastener_section, None)
+# print(elset)
+
+
+# fastener_section_SET = fastener_section.get_entity_values(deck,('ELSET id',))
+# if fastener_section_SET:
+# 	set_id = fastener_section_SET['ELSET id'] 
+# print(set_id)
+
+# fastener_section_SET = base.GetEntity(deck, "SET", 928)
+# print(set_id._name)
+# print(fastener_section_SET._name)
+
+# conn = base.NameToEnts("^"+set_id._name+"$")
+# print(conn)
 
 # print(connector_section_prop)
 
@@ -69,11 +102,12 @@ deck = constants.ABAQUS
 
 import os
 
-connector_file = os.path.join(os.getcwd(), 'connectors_input.dat')
+folder = os.getcwd()    # files created will be 'connectors_only.dat', 'connectors_and_fasteners.dat', 'fasteners.dat'
 conn_sections = base.CollectEntities(deck, None, 'CONNECTOR_SECTION')
+fasteners = base.CollectEntities(deck, None, 'FASTENER')
 
-conns = Write_Connectors.ConnectorSections(conn_sections, connector_file)
-conns.write()
+conns = Write_Connectors_and_Fasteners.process_entities(location = folder, connectors = conn_sections, fasteners = fasteners)
+# conns.write()
 
 # x=22
 
