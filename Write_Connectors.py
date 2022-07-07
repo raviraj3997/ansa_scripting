@@ -1,4 +1,5 @@
 import os
+import string
 import ansa
 from ansa import base
 from ansa import constants
@@ -35,10 +36,15 @@ class ConnectorSections:
 			conn_comp1 = conn_section_entities['COMPONENT_1']
 			conn_comp2 = conn_section_entities['COMPONENT_2']
 
+			conn_ref_length_commnads = ''
+
 			if conn_mat != None:
 				if conn_mat._name != self.connector_materials:
+					# print(conn_mat._name)
 					self.connector_materials = conn_mat._name
 					ConnectorMaterial(self.output_file, conn_mat, conn_comp1, conn_comp2).write()
+				conn_ref_length_commnads = ConnectorConstitutiveReference(conn_mat).get_commands()
+				# print(conn_ref_length_commnads)
 			else:
 				# print(f"CONNECTOR SECTION with ELST:{conn_section._name} has no BEHAVIOR keyword. The connector element's behavior is determined by kinematic constraints only.")
 				self.connector_materials = ''
@@ -55,7 +61,7 @@ class ConnectorSections:
 
 			ORIENT_1 = conn_section_entities['ORIENT_1']
 			ORIENT_2 = conn_section_entities['ORIENT_2']
-			ConnectorOrientation(self.output_file, ORIENT_1, ORIENT_2, conn_comp1,  conn_comp2).write()
+			ConnectorOrientation(self.output_file, ORIENT_1, ORIENT_2, conn_comp1,  conn_comp2, conn_ref_length_commnads).write()
 
 			ConnectorElement(self.output_file, conn_section, conn_comp1, conn_comp2).write()
 
@@ -109,7 +115,31 @@ class ConnectorElement:
 		file.close()
 		
 
+class ConnectorConstitutiveReference:
+	
+	def __init__(self, material) -> None:
+		self.base = base
+		self.deck = constants.ABAQUS
+		self.material = material
 
+	def get_commands(self):
+		conn_consti_refs = base.NameToEnts("^CONNECTOR CONSTITUTIVE REFERENCE:"+self.material._name+"$")
+		if conn_consti_refs:
+			conn_consti_ref = conn_consti_refs[0]
+			props = ('R.Len.1','R.Len.2','R.Len.3','R.Ang.1','R.Ang.2','R.Ang.3',)
+			conn_ref_len = conn_consti_ref.get_entity_values(self.deck, props)
+			secdata_command = 'SECDATA'
+			# print(conn_consti_ref._name)
+			# print(conn_ref_len)
+			for prop in props:
+				if prop in conn_ref_len.keys() and conn_ref_len[prop] != None:
+					secdata_command += f',{conn_ref_len[prop]}'
+				else:
+					secdata_command += ','
+		else:
+			secdata_command = ''
+
+		return secdata_command
 
 class ConnectorMaterial:
 	
@@ -129,23 +159,116 @@ class ConnectorMaterial:
 
 		# Write Connector Elasticity:
 		conn_elast_list = base.NameToEnts("^CONNECTOR ELASTICITY:"+self.material._name+"$")
-		if conn_elast_list:
-			conn_elast = conn_elast_list[0]
+		conn_damping_list = base.NameToEnts("^CONNECTOR DAMPING:"+self.material._name+"$")
+		if conn_elast_list or conn_damping_list:
+			
 			print(f"Writing connector material NAME: {self.material._name}")
+			file = open(self.output_file, 'a')
+			file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
+			file.write('M_ID = MAT_MAX+1\n')
+			file.close()
 			# print(conn_elast.card_fields(self.deck))
-			self.write_connector_elasticity(conn_elast)
+			if conn_elast_list:
+				conn_elast = conn_elast_list[0]
+				self.write_connector_elasticity(conn_elast)
+			if conn_damping_list:
+				conn_damp = conn_damping_list[0]
+				self.write_connector_damping(conn_damp)
+
+			file = open(self.output_file, 'a')
+			file.write('\n')
+			file.write(f'MAT, M_ID\n')
+			file.write('\n')
+			file.close()
 			
 			# print(f"Writing connector material named TEst {conn_elast._name}")
+	def write_connector_damping(self, conn_damp):
+		file = open(self.output_file, 'a')
+		file.write('\n')
+		file.write(f'! Damping Properties : {conn_damp._name} \n')
+		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
+		if self.conn_comp1 in comps or self.conn_comp2 in comps:
+			props = ('NONLINEAR(1)','NONLINEAR(2)','NONLINEAR(3)','NONLINEAR(4)','NONLINEAR(5)','NONLINEAR(6)',)
+			# print(conn_damp._name)
+			check_linear = conn_damp.get_entity_values(self.deck, props)
+			all_linear = True
+			if any([True if i == 'YES' else False for i in list(check_linear.values())]):
+				all_linear = False
+			# print(f'all_linear = {all_linear}')
+			# print(conn_damp.card_fields(self.deck))
+
+			if not conn_damp.get_entity_values(self.deck,('COMP_VISCOUS',)):
+				print(f"*CONNECTOR DAMPING of material {self.material._name} is not processed. \n")
+				file.write('MP,DENS,M_ID,0.0\n')
+				file.write(f"! *CONNECTOR DAMPING of material {self.material._name} is not processed. \n")
+
+			elif conn_damp.get_entity_values(self.deck,('COMP_VISCOUS',))['COMP_VISCOUS'] == 'YES':
+				comps_ampping = {1:1,2:7,3:12,4:16,5:19,6:21}
+				if all_linear:
+					file.write('\n')
+					file.write('TB,JOIN,M_ID,1,,DAMP\n')
+				for i in range(1,7):
+					props = (f'COMP({i})',f'DEP({i})',f'TYPE({i})',f'NONLINEAR({i})',f'Dam.Coef.({i})',f'Freq.({i})',f'Force({i})',f'Rel.Vel.({i})',f'DATA TABLE({i})')
+					prop_dict = conn_damp.get_entity_values(self.deck, props)
+					if f'DEP({i})' in prop_dict.keys() and  prop_dict[f'DEP({i})'] != 'YES':
+						if prop_dict[f'COMP({i})'] == 'YES':
+							if prop_dict[f'NONLINEAR({i})'] == 'YES':
+								print(f"Nonlinear damping without dependent table is not processed. *CONNECTOR DAMPING, NAME:{conn_damp._name}.")
+							else:
+								if all_linear:
+									damp = prop_dict[f'Dam.Coef.({i})']
+									file.write(f'TBDATA,{comps_ampping[i]},{damp}\n')
+								else:
+									damp = prop_dict[f'Dam.Coef.({i})']
+									file.write('\n')
+									file.write(f'TB,JOIN,M_ID,1,3,JND{i}\n')
+									file.write(f'TBPT,, -1.0,-{damp} \n')
+									file.write(f'TBPT,,0.0,0.0\n')
+									file.write(f'TBPT,, 1.0,{damp}\n')
+						else:
+							pass
+					else:
+						if f'DEP({i})' in prop_dict.keys() and prop_dict[f'DEP({i})'] == 'YES':
+							if prop_dict[f'NONLINEAR({i})'] == 'YES':
+								tbpt_data = ''
+								tbpts = 0
+								temps = 0
+								curr_temp = 0
+								curve_data = self.base.GetLoadCurveData(prop_dict[f'DATA TABLE({i})'])
+								# print(curve_data)
+								for pt in curve_data:
+									tbpts += 1
+									if len(pt) == 3:
+										if curr_temp != pt[2]:
+											curr_temp = pt[2]
+											temps += 1
+											tbpt_data = tbpt_data + '\n'
+											tbpt_data = tbpt_data + f'TBTEMP,{curr_temp}\n'
+										tbpt_data = tbpt_data + f'TBPT,,{pt[1]},{pt[0]} \n'
+
+									elif len(pt) == 2:
+										tbpt_data = tbpt_data + f'TBPT,,{pt[1]},{pt[0]} \n'
+								if temps == 0:
+									temps = 1
+								file.write(f'TB,JOIN,M_ID,{temps},{tbpts},JND{i}\n')
+								file.write(tbpt_data)
+							else:
+								print(f"Tabular values are given for *CONNECTOR DAMPING with NAME:{conn_damp._name}. And this entity is not processed.")
+			else:
+				print(f"Matrix values are given for *CONNECTOR DAMPING with NAME:{conn_damp._name}. And this entity is not processed.")
+		else:
+			print(f'{self.conn_comp1} is not processed for {self.material._name}')
+
+
+		file.close()
 
 	def write_connector_elasticity(self, conn_elast):
 		# print(conn_elast)
 		file = open(self.output_file, 'a')
+		file.write('\n')
 		file.write(f'! Stiffness Properties : {conn_elast._name} \n')
 		comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
 		if self.conn_comp1 in comps or self.conn_comp2 in comps:
-			file.write('*GET,MAT_MAX,MAT,0,NUM,MAX\n')
-			file.write('M_ID = MAT_MAX+1\n')
-
 			props = ('NONLINEAR(1)','NONLINEAR(2)','NONLINEAR(3)','NONLINEAR(4)','NONLINEAR(5)','NONLINEAR(6)',)
 			# print(conn_elast._name)
 			check_linear = conn_elast.get_entity_values(self.deck, props)
@@ -155,9 +278,9 @@ class ConnectorMaterial:
 			# print(f'all_linear = {all_linear}')
 
 			if not conn_elast.get_entity_values(self.deck,('COMP',)):
-				print(f"*CONNECTOR BEHAVIOR, NAME:{self.material._name} is not processed. \n")
+				print(f"*CONNECTOR ELASTICITY of material {self.material._name} is not processed. \n")
 				file.write('MP,DENS,M_ID,0.0\n')
-				file.write(f"! *CONNECTOR BEHAVIOR, NAME:{self.material._name} is not processed. \n")
+				file.write(f"! *CONNECTOR ELASTICITY of material {self.material._name} is not processed. \n")
 
 			elif conn_elast.get_entity_values(self.deck,('COMP',))['COMP'] == 'YES':
 				comps_ampping = {1:1,2:7,3:12,4:16,5:19,6:21}
@@ -216,9 +339,6 @@ class ConnectorMaterial:
 							print(f"'RIGID' values are given for *CONNECTOR ELASTICITY with NAME:{conn_elast._name}. And this entity is not processed.")
 			else:
 				print(f"Matrix values are given for *CONNECTOR ELASTICITY with NAME:{conn_elast._name}. And this entity is not processed.")
-			file.write('\n')
-			file.write(f'MAT, M_ID\n')
-			file.write('\n')
 		else:
 			print(f'{self.conn_comp1} is not processed for {self.material._name}')
 
@@ -226,7 +346,7 @@ class ConnectorMaterial:
 
 
 class ConnectorOrientation:
-	def __init__(self, out_file, CSYS1, CSYS2, conn_comp1,  conn_comp2) -> None:
+	def __init__(self, out_file, CSYS1, CSYS2, conn_comp1,  conn_comp2, conn_ref_length_commnads) -> None:
 		self.base = base
 		self.deck = constants.ABAQUS
 		self.output_file = out_file
@@ -234,6 +354,7 @@ class ConnectorOrientation:
 		self.csys_2 = CSYS2
 		self.conn_comp1 = conn_comp1
 		self.conn_comp2 = conn_comp2
+		self.conn_ref_length_commnads = conn_ref_length_commnads
 
 	def write(self):
 		general_joint_comps = ['CARTESIAN', 'CARDAN', 'BUSHING', 'AXIAL']
@@ -267,11 +388,10 @@ class ConnectorOrientation:
 			id_2 = 0
 
 		file.write(f'SECJOIN,,{id_1},{id_2}\n')
-		file.write(f'SECJOIN,RDOF,{rdofs}\n')
-		file.close()
-	
-
-		file = open(self.output_file, 'a')
+		if joint_type == 'gene':
+			file.write(f'SECJOIN,RDOF,{rdofs}\n')
+		file.write(f'{self.conn_ref_length_commnads}\n')
+		# print(self.conn_ref_length_commnads)
 		file.write('\n')
 		file.write(f'SECNUM, SEC_ID\n')
 		file.write('\n')
