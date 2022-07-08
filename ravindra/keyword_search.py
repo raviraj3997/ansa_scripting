@@ -20,14 +20,18 @@ for (dirpath, dirnames, filenames) in os.walk(r'D:\HMC_translation\BMT_Analysis_
     listOfFiles += [os.path.join(dirpath, file) for file in filenames if file.endswith('.inp')]
 # print(len(listOfFiles))
 # print('\n'.join(listOfFiles))
-
+all_keys = []
 for file_name in listOfFiles:
     f_name = file_name.split('\\')[-1]
     file = open(file_name, 'r')
     x = re.findall(r"\n[*]{1}[A-Za-z]+[ ]?[A-Za-z]+", file.read())
     file.close()
     x = [i.replace('\n','') for i in x]
+    all_keys.extend(x)
     y = OrderedCounter(x)
     file_out = open('keyword_info_'+f_name+'.txt', 'w')
     file_out.write(json.dumps(y, indent=4))
     file_out.close()
+
+Total_keywords_all_inputs = OrderedCounter(all_keys)
+print(json.dumps(Total_keywords_all_inputs, indent=4))

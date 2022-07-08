@@ -83,7 +83,7 @@ class ConnectorSections:
 
 	def write_real_id(self, file_out):
 		file = open(file_out, 'w')
-		file.write('*GET,REAL_MAX,RCON,0,0,NUM,MAX\n')
+		file.write('*GET,REAL_MAX,RCON,0,NUM,MAX\n')
 		file.write('R_ID = REAL_MAX + 1\n')
 		file.write('R,R_ID\n')
 		file.write('\n')
@@ -134,15 +134,28 @@ class ConnectorElement:
 			file.write('\n')
 
 			file.write(f'! element of "*CONNECTOR SECTION, ELSET={self.conn_section._name}".\n')
+			elem_counter = 0
+			surf_counter = 1
 			for elem in sec_elems:
+				elem_counter += 1
 				nodes = elem.get_entity_values(self.deck,('G1','G2'))
 				# print(nodes)
 				if self.fastener == None:
 					file.write(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
 				else:
-					fastener_commands = Fasteners().get_fastener_commnands(self.fastener, nodes, self.orient_1, self.orient_2, sec_elems)
-					file.write(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
-
+					if elem_counter%surf_counter == 0:
+						fastener_commands, total_surfs = Fasteners().get_fastener_commnands(self.fastener, nodes, self.orient_1, self.orient_2, sec_elems)
+						file.write(fastener_commands)
+						surf_counter = total_surfs
+			if self.fastener != None:
+				file.write('\n')
+				file.write('*get,dummy_max,ETYP,0,NUM,MAX\n')
+				file.write('ESEL,S,TYPE,,ETYP_ID+1,dummy_max\n')
+				file.write('ESEL,R,ENAME,,184\n')
+				file.write('emodif,all,type,ETYP_ID\n')
+				file.write('emodif,all,secnum,SEC_ID\n')
+				file.write('emodif,all,mat,M_ID\n')
+				
 				# print(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
 			file.write('\n')
 				
@@ -473,7 +486,31 @@ class Fasteners:
 		return fastener_dict
 
 	def get_fastener_commnands(self, fastener, nodes, orient_1, orient_2, sec_elems):
-		n1 = nodes['G1']
-		n2 = nodes['G2']
+		n1 = nodes['G1']._id
+		if nodes['G2']:
+			n2 = nodes['G2']._id
+		else:
+			n2 = ''
 
-		return ''
+		fast_prop = fastener.get_entity_values(self.deck,tuple(fastener.card_fields(self.deck)))
+		r_influ = fast_prop['INFLUENCE R']
+		r_search = fast_prop['SEARCH R']
+		interaction = fast_prop['INTERACTION']
+		adjust = fast_prop['ADJUST']
+		n_layers = fast_prop['NLAYERS']
+		fast_orient = fast_prop['ORIENT']
+		surfs = [fast_prop[f'SURF{i}'] for i in range(1,12) if fast_prop[f'SURF{i}'] != None]
+		fastner_mapdl_string = ''
+		fastner_mapdl_string += f'SWGEN,{interaction._name},{r_influ},{surfs[0]._name},{surfs[1]._name},{n1},{n2},{r_search}\n'
+		if len(surfs) > 2:
+			fastner_mapdl_string += f'SWADD,{interaction._name},{r_search}'
+			if len(surfs) > 11:
+				for i in range(2,11):
+					fastner_mapdl_string += f',{surfs[i]._name}'
+				print(f'*FASTENER with INTERACTION NAME:{interaction._name} has more that 11 surfaces in it, only 11 are supported in MAPDL, others are not processed')
+			else:
+				for i in range(2,len(surfs)):
+					fastner_mapdl_string += f',{surfs[i]._name}'
+			fastner_mapdl_string += '\n'
+
+		return fastner_mapdl_string, len(surfs)
