@@ -11,6 +11,9 @@ def process_entities(location, connectors=[], fasteners=[]) -> None:
 	# aa=ConnectorSections(location, connectors, fastneres_dict).write()
 	connector_data = ConnectorSections(location, connectors, fastneres_dict)
 	connector_data.write()
+	connectors = base.CollectEntities(constants.ABAQUS, None, 'CONNECTOR')
+	base.DeleteEntity(fasteners, False, False)
+	base.DeleteEntity(connectors, False, False)
 	# print(connector_data.all_connectors)
 	
 class ConnectorSections:
@@ -91,6 +94,14 @@ class ConnectorSections:
 
 	def write_real_id(self, file_out):
 		file = open(file_out, 'w')
+		file.write('! Local coordinate (global directions) system for SECJOIN\n')
+		file.write('*GET, SYS_MAX, CDSY, , NUM, MAX\n')
+		file.write('SYS_ID = SYS_MAX + 1\n')
+		file.write('LOCAL,SYS_ID,0,0,0,0,0,0,0\n')
+		file.write('CSYS,0\n')
+		file.write('\n')
+
+		file.write('! Dummy Real Constant\n')
 		file.write('*GET,REAL_MAX,RCON,0,NUM,MAX\n')
 		file.write('R_ID = REAL_MAX + 1\n')
 		file.write('R,R_ID\n')
@@ -485,11 +496,11 @@ class ConnectorOrientation:
 			else:
 				id_2 = self.get_translated_id(self.csys_2)
 		elif self.csys_2 != None:
-			id_1 = 0
+			id_1 = 'SYS_ID'
 			id_2 = self.get_translated_id(self.csys_2)
 		else:		
-			id_1 = 0
-			id_2 = 0
+			id_1 = 'SYS_ID'
+			id_2 = 'SYS_ID'
 		if joint_type != "LINK" and joint_type != 'BEAM':
 			file.write(f'sectype,SEC_ID, joint, {joint_type},\n')
 			file.write(f'SECJOIN,,{id_1},{id_2}\n')
