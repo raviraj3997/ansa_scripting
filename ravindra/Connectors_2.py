@@ -8,10 +8,10 @@ import Write_Connectors_and_Fasteners
 import importlib
 importlib.reload(Write_Connectors_and_Fasteners)
 
-all_keys = ansa.utils.DatabaseBrowserInfo(deck)
-print('\n'.join(all_keys.keys()))
-print(all_keys)
-print(len(all_keys.keys()))
+# all_keys = ansa.utils.DatabaseBrowserInfo(deck)
+# print('\n'.join(all_keys.keys()))
+# print(all_keys)
+# print(len(all_keys.keys()))
 # def main():
 # 	# Need some documentation? Run this with F5
 # deck = constants.ABAQUS
@@ -130,7 +130,7 @@ import os
 folder = os.getcwd()    # files created will be 'connectors_only.dat', 'connectors_and_fasteners.dat', 'fasteners.dat'
 conn_sections = base.CollectEntities(deck, None, 'CONNECTOR_SECTION')
 fasteners = base.CollectEntities(deck, None, 'FASTENER')
-
+print(folder)
 conns = Write_Connectors_and_Fasteners.process_entities(location = folder, connectors = conn_sections, fasteners = fasteners)
 # conns.write()
 
