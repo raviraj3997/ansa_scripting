@@ -11,9 +11,16 @@ def process_entities(location, connectors=[], fasteners=[]) -> None:
 	# aa=ConnectorSections(location, connectors, fastneres_dict).write()
 	connector_data = ConnectorSections(location, connectors, fastneres_dict)
 	connector_data.write()
-	connectors = base.CollectEntities(constants.ABAQUS, None, 'CONNECTOR')
+	conn_list = ['CONNECTOR', 'CONNECTOR_SECTION', 'CONNECTOR BEHAVIOR', 'CONNECTOR_ELASTICITY', 'CONNECTOR_DAMPING', 'CONNECTOR_STOP', 'CONNECTOR_CONSTITUTIVE_REFERENCE', 'CONNECTOR_MOTION', 'CONNECTOR_PLASTICITY', 'CONNECTOR_FRICTION']
+	for item in conn_list:
+		connectors = base.CollectEntities(constants.ABAQUS, None, item)
+		base.DeleteEntity(connectors, False, False)
+	
 	base.DeleteEntity(fasteners, False, False)
-	base.DeleteEntity(connectors, False, False)
+	fast_property = base.CollectEntities(constants.ABAQUS, None, 'FASTENER_PROPERTY')
+	base.DeleteEntity(fast_property, True, True)
+	fast_interaction_out = base.CollectEntities(constants.ABAQUS, None, 'INTERACTION_OUTPUT')
+	base.DeleteEntity(fast_interaction_out, True, True)
 	# print(connector_data.all_connectors)
 	
 class ConnectorSections:
@@ -126,6 +133,8 @@ class ConnectorElement:
 	def write(self):
 		file = open(self.out_file_check, 'a')
 		sec_elems = base.CollectEntities(self.deck, self.conn_section, None)
+		sec_elems.sort(key=lambda x: x._id)
+
 		if sec_elems:
 			file.write('*get,TYPE_MAX,ETYP,0,NUM,MAX\n')
 			file.write('ETYP_ID = TYPE_MAX + 1\n')
@@ -151,27 +160,30 @@ class ConnectorElement:
 
 			elif self.conn_comp1 == 'JOIN' and not bool(self.conn_comp2):
 				file.write('KEYOPT,ETYP_ID,1,0          ! Rigid Link Joint\n')
+				file.write('KEYOPT,ETYP_ID,2,1          ! Lagrange mult\n')
 
-			elif self.conn_comp1 == 'BEAM':
-				file.write('KEYOPT,ETYP_ID,1,1          ! Rigid Beam\n')
+			# elif self.conn_comp1 == 'BEAM':
+			# 	file.write('KEYOPT,ETYP_ID,1,1          ! Rigid Beam\n')
+			#	file.write('KEYOPT,ETYP_ID,2,1          ! Lagrange mult\n')
 			
-			elif (self.conn_comp1 == 'CYLINDRICAL') or (self.conn_comp1 in ['SLOT', 'REVOLUTE'] and self.conn_comp2 in ['SLOT', 'REVOLUTE']):
-				file.write('KEYOPT,ETYP_ID,1,11          ! Cylindrical Joint\n')
-				file.write('KEYOPT,ETYP_ID,4,0           ! x-axix cylindrical\n')
+			# elif (self.conn_comp1 == 'CYLINDRICAL') or (self.conn_comp1 in ['SLOT', 'REVOLUTE'] and self.conn_comp2 in ['SLOT', 'REVOLUTE']):
+			# 	file.write('KEYOPT,ETYP_ID,1,11          ! Cylindrical Joint\n')
+			# 	file.write('KEYOPT,ETYP_ID,4,0           ! x-axix cylindrical\n')
 
-			elif (self.conn_comp1 == 'PLANAR') or (self.conn_comp1 in ['SLIDE-PLANE', 'REVOLUTE'] and self.conn_comp2 in ['SLIDE-PLANE', 'REVOLUTE']):
-				file.write('KEYOPT,ETYP_ID,1,12          ! Planar Joint\n')
-				file.write('KEYOPT,ETYP_ID,4,0           ! x-axix planar\n')
+			# elif (self.conn_comp1 == 'PLANAR') or (self.conn_comp1 in ['SLIDE-PLANE', 'REVOLUTE'] and self.conn_comp2 in ['SLIDE-PLANE', 'REVOLUTE']):
+			# 	file.write('KEYOPT,ETYP_ID,1,12          ! Planar Joint\n')
+			# 	file.write('KEYOPT,ETYP_ID,4,0           ! x-axix planar\n')
 
-			elif self.conn_comp1 == 'ALIGN' and not bool(self.conn_comp2):
-				file.write('KEYOPT,ETYP_ID,1,14          ! Orient Joint\n')
+			# elif self.conn_comp1 == 'ALIGN' and not bool(self.conn_comp2):
+			# 	file.write('KEYOPT,ETYP_ID,1,14          ! Orient Joint\n')
 
-			elif (self.conn_comp1 == 'BUSHING') or (self.conn_comp1 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION'] and self.conn_comp2 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION']):
-				file.write('KEYOPT,ETYP_ID,1,16          ! General Joint\n')
+			# elif (self.conn_comp1 == 'BUSHING') or (self.conn_comp1 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION'] and self.conn_comp2 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION']):
+			# 	file.write('KEYOPT,ETYP_ID,1,16          ! General Joint\n')
 
 			else:
 				print(f"*CONNECTOR SECTION, ELSET={self.conn_section._name}: Joint Combination of joint type '{self.conn_comp1}' with '{self.conn_comp2}' is not processed. Rigid beam joint is defined")
 				file.write('KEYOPT,ETYP_ID,1,1          ! Rigid Beam\n')
+				file.write('KEYOPT,ETYP_ID,2,1          ! Lagrange mult\n')
 
 			file.write('\n')
 			file.write('TYPE, ETYP_ID\n')
@@ -202,7 +214,12 @@ class ConnectorElement:
 					file.write('emodif,all,type,ETYP_ID\n')
 					file.write('emodif,all,secnum,SEC_ID\n')
 					file.write('emodif,all,mat,M_ID\n')
-					file.write('allsel')
+
+			
+			file.write('\n')
+			file.write('ESEL,S,TYPE,,ETYP_ID\n')
+			file.write('CM,'+str(self.conn_section._name).replace('"','')+',ELEM\n')
+			file.write('ALLSEL\n')
 				
 				# print(f'E,{nodes["G1"]._id},{nodes["G2"]._id}\n')
 			file.write('\n')
@@ -218,9 +235,9 @@ class ConnectorConstitutiveReference:
 		self.material = material
 
 	def get_commands(self):
-		conn_consti_refs = base.NameToEnts("^CONNECTOR CONSTITUTIVE REFERENCE:"+self.material._name+"$")
-		if conn_consti_refs:
-			conn_consti_ref = conn_consti_refs[0]
+		conn_consti_refs = self.material.get_entity_values(self.deck, ('*CONSTITUTIVE REFERENCE',))['*CONSTITUTIVE REFERENCE']
+		if conn_consti_refs == "YES":
+			conn_consti_ref = self.material.get_entity_values(self.deck, ('CNRF>data',))['CNRF>data'] 
 			props = ('R.Len.1','R.Len.2','R.Len.3','R.Ang.1','R.Ang.2','R.Ang.3',)
 			conn_ref_len = conn_consti_ref.get_entity_values(self.deck, props)
 			secdata_command = 'SECDATA'
@@ -251,9 +268,9 @@ class ConnectorMaterial:
 		"""
 
 		# Write Connector Elasticity:
-		conn_elast_list = base.NameToEnts("^CONNECTOR ELASTICITY:"+self.material._name+"$")
-		conn_damping_list = base.NameToEnts("^CONNECTOR DAMPING:"+self.material._name+"$")
-		if conn_elast_list or conn_damping_list:
+		conn_elast_list = self.material.get_entity_values(self.deck, ('*ELASTICITY',))['*ELASTICITY']
+		conn_damping_list = self.material.get_entity_values(self.deck, ('*DAMPING',))['*DAMPING']
+		if conn_elast_list=='YES' or conn_damping_list == "YES":
 			
 			print(f"Writing connector material NAME: {self.material._name}")
 			file = open(self.out_file_check, 'a')
@@ -261,11 +278,11 @@ class ConnectorMaterial:
 			file.write('M_ID = MAT_MAX+1\n')
 			file.close()
 			# print(conn_elast.card_fields(self.deck))
-			if conn_elast_list:
-				conn_elast = conn_elast_list[0]
+			if conn_elast_list=='YES':
+				conn_elast = self.material.get_entity_values(self.deck, ('EL>data',))['EL>data'] 
 				self.write_connector_elasticity(conn_elast)
-			if conn_damping_list:
-				conn_damp = conn_damping_list[0]
+			if conn_damping_list == "YES":
+				conn_damp = self.material.get_entity_values(self.deck, ('D>data',))['D>data']
 				self.write_connector_damping(conn_damp)
 
 			file = open(self.out_file_check, 'a')
@@ -468,21 +485,21 @@ class ConnectorOrientation:
 		elif self.conn_comp1 == 'JOIN' and not bool(self.conn_comp2):
 			joint_type = 'LINK'
 
-		elif self.conn_comp1 == 'BEAM':
-			joint_type = 'BEAM'
+		# elif self.conn_comp1 == 'BEAM':
+		# 	joint_type = 'BEAM'
 		
-		elif (self.conn_comp1 == 'CYLINDRICAL') or (self.conn_comp1 in ['SLOT', 'REVOLUTE'] and self.conn_comp2 in ['SLOT', 'REVOLUTE']):
-			joint_type = 'CYLI'
+		# elif (self.conn_comp1 == 'CYLINDRICAL') or (self.conn_comp1 in ['SLOT', 'REVOLUTE'] and self.conn_comp2 in ['SLOT', 'REVOLUTE']):
+		# 	joint_type = 'CYLI'
 
-		elif (self.conn_comp1 == 'PLANAR') or (self.conn_comp1 in ['SLIDE-PLANE', 'REVOLUTE'] and self.conn_comp2 in ['SLIDE-PLANE', 'REVOLUTE']):
-			joint_type = 'PLAN'
+		# elif (self.conn_comp1 == 'PLANAR') or (self.conn_comp1 in ['SLIDE-PLANE', 'REVOLUTE'] and self.conn_comp2 in ['SLIDE-PLANE', 'REVOLUTE']):
+		# 	joint_type = 'PLAN'
 
-		elif self.conn_comp1 == 'ALIGN' and not bool(self.conn_comp2):
-			joint_type = 'ORIE'
+		# elif self.conn_comp1 == 'ALIGN' and not bool(self.conn_comp2):
+		# 	joint_type = 'ORIE'
 
-		elif (self.conn_comp1 == 'BUSHING') or (self.conn_comp1 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION'] and self.conn_comp2 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION']):
-			joint_type = 'GENE'
-			rdofs = ''
+		# elif (self.conn_comp1 == 'BUSHING') or (self.conn_comp1 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION'] and self.conn_comp2 in ['PROJECTION CARTESIAN', 'PROJECTION FLEXION-TORSION']):
+		# 	joint_type = 'GENE'
+		# 	rdofs = ''
 
 		else:
 			joint_type = 'BEAM'
@@ -578,7 +595,7 @@ class Fasteners:
 			set_list  = {'OUTPUT TYPE': 'NODE'}
 			surf.set_entity_values(self.deck, set_list)
 		fastner_mapdl_string = ''
-		fastner_mapdl_string += f'SWGEN,{interaction._name}_{set_number},{r_influ},{surfs[0]._name},{surfs[1]._name},{n1},{n2},{r_search}\n'
+		fastner_mapdl_string += f'SWGEN,{interaction._name}_{set_number},{r_influ},{surfs[0]._name},{surfs[1]._name},{n1},,{r_search}\n'
 		if len(surfs) > 2:
 			fastner_mapdl_string += f'SWADD,{interaction._name}_{set_number},{r_search}'
 			if len(surfs) > 11:

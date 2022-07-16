@@ -23,10 +23,10 @@ class MPCs:
 
     def write(self):
         debug_mode = constants.REPORT_ALL 
-        variables_list = {'Subtype':'Beam'} 
+        variables_list = {'Subtype':'Beam', 'KEYOPT(2)':1} 
         beam_ent, debug_report = base.CreateEntity(self.ansys_deck, 'SECTION_JOINT', variables_list, debug = debug_mode)    
 
-        variables_list = {'Subtype':'Link'} 
+        variables_list = {'Subtype':'Link', 'KEYOPT(2)':1} 
         link_ent, debug_report = base.CreateEntity(self.ansys_deck, 'SECTION_JOINT', variables_list, debug = debug_mode)    
             
         type_mapping = {
