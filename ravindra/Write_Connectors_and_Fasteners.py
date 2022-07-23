@@ -21,7 +21,7 @@ def process_entities(location, connectors=[], fasteners=[]) -> None:
 	base.DeleteEntity(fast_property, True, True)
 	fast_interaction_out = base.CollectEntities(constants.ABAQUS, None, 'INTERACTION_OUTPUT')
 	base.DeleteEntity(fast_interaction_out, True, True)
-	# print(connector_data.all_connectors)
+	print(connector_data.all_connectors)
 	
 class ConnectorSections:
 
